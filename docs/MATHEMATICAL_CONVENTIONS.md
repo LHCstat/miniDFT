@@ -95,13 +95,23 @@ V_{\rm ion}(\mathbf s)=\sum_j A_j
 \cos(2\pi\mathbf m_j\!\cdot\!\mathbf s+\phi_j).
 \]
 
-For `gaussian_atoms`, it uses the minimum Cartesian distance over periodic image shifts and sums `depth * exp(-distance_squared / (2 * width**2))`.  Both are local educational model fields.
+For `gaussian_atoms`, the implementation first forms the component-wise wrapped fractional displacement
 
-`hartree_from_density` computes scalar density Fourier coefficients and then, for every nonzero reciprocal-grid vector,
+\[
+\delta=\mathbf s-\operatorname{mod}(\mathbf s_{\rm atom},1),
+\qquad \delta\mathrel{-}=\operatorname{rint}(\delta),
+\]
+
+then evaluates the 27 candidates \(A(\delta+\mathbf t)\) for
+\(\mathbf t\in\{-1,0,1\}^3\), selects their smallest Cartesian squared norm, and sums `depth * exp(-distance_squared / (2 * width**2))`.  This is the approved v0.1 27-neighbor search, not a globally guaranteed closest-image algorithm.  It is reliable for the small/reasonably reduced teaching cells supplied here; highly skew or non-reduced cells can require a wider lattice-vector search to find the global closest image.  Both potential types are local educational model fields.
+
+`hartree_from_density` computes scalar density Fourier coefficients.  For ordinary non-aliased nonzero FFT modes it uses
 
 \[
 V_H(\mathbf G)=\frac{4\pi n(\mathbf G)}{|\mathbf G|^2}.
 \]
+
+The exact code denominator is `squared = 0.5 * (raw_squared + raw_squared[conjugate])`, where `raw_squared[m] = |B m|²` at the FFT slot and `conjugate` is the slot `(-m) mod grid.shape`.  Away from even-axis Nyquist aliases, the paired vectors are negatives and the two values agree, so this reduces to the ordinary formula above.  When an even FFT axis has a Nyquist component, sign reversal can alias that component to itself while other components reverse; in a skew cell the two represented Cartesian norms can differ.  The symmetric average gives conjugate FFT slots the same real kernel, preserving Hermiticity and therefore a real Hartree field.  The implementation then applies \(4\pi n(\mathbf G)/\texttt{squared}\) to every slot with positive `squared`.
 
 The code leaves the zero component of `potential_fourier` at zero.  Thus `V_H(G=0)=0`: a neutralizing uniform background/fixed-average-potential gauge, recorded as `hartree_g0: zero_neutralizing_background` in `summary.yaml`.  It is not an explicit ionic charge calculation.
 

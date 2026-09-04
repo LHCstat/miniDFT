@@ -56,11 +56,13 @@ The plane-wave basis retains \(\frac12|G|^2\le E_{cut}\), and its Hamiltonian ac
 HC=\tfrac12|G|^2C+\mathcal F\{V_{eff}\,\mathcal F^{-1}C\}.
 \]
 
-Density is \(n(r)=\sum_n f_n|\psi_n(r)|^2\), with `f_n` equal to 0 or 2.  The Hartree reciprocal kernel is \(4\pi/G^2\) for nonzero \(G\) and exactly zero at \(G=0\).  Exchange is Dirac exchange and correlation is unpolarized Perdew–Zunger 1981 LDA.  The direct energy is
+Density is \(n(r)=\sum_n f_n|\psi_n(r)|^2\), with `f_n` equal to 0 or 2.  For ordinary non-aliased nonzero FFT modes, the Hartree reciprocal kernel is \(4\pi/G^2\), and it is exactly zero at \(G=0\).  To keep the discrete kernel Hermitian on even skew FFT grids, `hartree_from_density` actually uses `0.5 * (raw_squared[m] + raw_squared[(-m) mod grid.shape])` as its denominator.  This equals \(G^2\) away from Nyquist aliases; at an aliased even-axis Nyquist pair it symmetrizes the possibly unequal Cartesian norms represented by FFT-conjugate slots, ensuring a real Hartree field.  Exchange is Dirac exchange and correlation is unpolarized Perdew–Zunger 1981 LDA.  The direct energy is
 
 \[
 E_{model}=T_s+\int nV_{ion}+\frac12\int nV_H+\int n\epsilon_{xc}.
 \]
+
+For a Gaussian well, the ionic builder wraps each fractional displacement component with `delta -= rint(delta)`, tests all 27 `delta + translation` vectors for `translation in {-1, 0, 1}³`, converts them using `A`, and uses the least squared Cartesian norm in the Gaussian.  This exact finite search is intentional v0.1 behavior, not a general closest-lattice-vector solver.
 
 The full normalization, lattice, FFT, shape, and energy discussion is in [MATHEMATICAL_CONVENTIONS.md](MATHEMATICAL_CONVENTIONS.md).
 
@@ -94,6 +96,7 @@ The focused example/CLI regression passed after the test-first RED/GREEN cycle. 
 - Only Gamma-point calculations exist.  K-point weights, Bloch shifts, and Brillouin-zone DOS are future work.
 - Only non-spin-polarized integer occupations exist.  Finite-temperature/fractional occupations and spin channels belong behind `occupations.py`, `density.py`, and XC interfaces.
 - Cosine and Gaussian wells are local teaching models.  Real pseudopotential, PAW, and ion-ion/Ewald work requires a separate ionic model and energy contribution.
+- Gaussian wells use the approved component-wise wrapped displacement plus a fixed 27-neighbor `{-1, 0, 1}³` image search.  This is not globally closest-image reliable for highly skew or non-reduced cells, which can require a wider lattice-vector search.
 - LDA is intentionally local and simple; GGA/meta-GGA would extend `xc.py` and `PotentialSet` inputs.
 - Linear mixing is robust for the small examples but not a production accelerator.  Pulay/Kerker strategies can replace `mix_density` without changing the SCF state/result boundary.
 - The sparse eigensolver is matrix-free for normal cases; its dense fallback is intentionally limited to small dimensions where ARPACK cannot request the desired count.
