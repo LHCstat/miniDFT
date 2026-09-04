@@ -16,7 +16,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("input", help="YAML system definition")
     parser.add_argument("--output", default="output", help="directory for result files")
     parser.add_argument("--quiet", action="store_true", help="suppress SCF progress output")
-    arguments = parser.parse_args(argv)
+    try:
+        arguments = parser.parse_args(argv)
+    except SystemExit as error:
+        return 0 if error.code == 0 else 1
 
     callback = None if arguments.quiet else _print_iteration
     if not arguments.quiet:

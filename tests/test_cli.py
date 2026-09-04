@@ -102,6 +102,24 @@ def test_cli_reports_yaml_input_errors_without_traceback(tmp_path, capsys):
     assert "Traceback" not in error
 
 
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        ([], "the following arguments are required: input"),
+        (["--output"], "argument --output: expected one argument"),
+        (["system.yaml", "--not-an-option"], "unrecognized arguments: --not-an-option"),
+    ],
+)
+def test_cli_argument_errors_return_one_without_raising(argv, message, capsys):
+    """Catch argparse SystemExit(2) leaking through main's integer-return contract."""
+    assert main(argv) == 1
+
+    error = capsys.readouterr().err
+    assert "usage: mini-dft" in error
+    assert message in error
+    assert "Traceback" not in error
+
+
 def test_cli_returns_nonconvergence_code_after_writing_diagnostics(tmp_path):
     """Catch exhausted SCF runs that lose diagnostics or report successful completion."""
     input_path = _write_input(tmp_path, max_iterations=1)
