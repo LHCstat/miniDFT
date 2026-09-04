@@ -78,18 +78,40 @@ The CLI accepts `python -m mini_dft INPUT.yaml --output DIRECTORY [--quiet]`.  I
 - `fields.npz` for the real-space fields; and
 - `wavefunctions.npz` for index/vector metadata and complex coefficients.
 
-## Test coverage and example evidence
+## Test coverage and final verification evidence
 
 Unit and integration coverage spans conversion/validation, lattice algebra, cutoff enumeration, FFT round trips and Parseval behavior, ionic/Hartree/XC potentials, Hamiltonian Hermiticity and free/constant-potential behavior, eigensolver residuals, occupations/density/energy invariants, mixing, SCF convergence/exhaustion, DOS, output serialization, CLI errors, and the two repository examples.
 
-Task 9 executed the repository examples directly through the CLI:
+Task 10 ran the following acceptance commands from a clean `verification-output/` location:
 
-| Example | Converged recorded iterations | `npw`, FFT grid | Charge integral | Model energy (Ha) |
-| --- | ---: | --- | ---: | ---: |
-| `mini_dft/input.yaml` cosine | 30 | 27, `(5, 5, 5)` | 2.0000000000000013 | -0.25851023734873285 |
-| `examples/gaussian_atoms.yaml` | 23 | 27, `(5, 5, 5)` | 2.000000000000001 | -0.31789638792188146 |
+```powershell
+python -B -m compileall -q mini_dft tests
+python -B -c "import mini_dft; print(mini_dft.__all__)"
+python -B -m pytest -q
+python -B -m mini_dft mini_dft/input.yaml --output verification-output/cosine
+python -B -m mini_dft examples/gaussian_atoms.yaml --output verification-output/gaussian
+```
 
-The focused example/CLI regression passed after the test-first RED/GREEN cycle.  A fresh Task 9 complete-suite run measured **92 passed in 3.85 s**.  Task 10 may add its own final acceptance measurements; this report does not prestate any values that have not been run.
+Compilation was silent with exit code 0.  Import printed exactly `['FFTGrid', 'Lattice', 'PlaneWaveBasis', 'SCFResult', 'SCFRunner', 'SystemConfig', 'load_system']` and no calculation output.  The complete pre-report suite passed **92 tests in 2.81 s** without warnings.  Both CLI commands returned 0, reported convergence, and wrote `summary.yaml`, `scf_history.csv`, `eigenvalues.csv`, `dos.csv`, `fields.npz`, and `wavefunctions.npz`.
+
+An independent `python -B -` audit loaded the YAML, CSV, and NPZ files and recomputed charge by `volume * mean(density)`, sortedness, coefficient overlaps, final convergence checks, direct energy components, the double-counting-corrected eigenvalue energy, effective-potential composition, and DOS properties:
+
+| Measured invariant | Cosine | Gaussian atoms | Acceptance |
+| --- | ---: | ---: | --- |
+| Recorded iterations | 30 | 23 | converged |
+| `npw`, FFT grid | 27, `(5, 5, 5)` | 27, `(5, 5, 5)` | expected serialized dimensions |
+| Density minimum | 0.0017707102167230596 | 0.003774769641598701 | nonnegative |
+| Recomputed charge | 2.0000000000000013 | 2.000000000000001 | target 2 |
+| Absolute charge error | 1.3322676295501878e-15 | 8.881784197001252e-16 | `< 1e-10` |
+| Minimum adjacent eigenvalue gap (Ha) | 4.163336342344337e-17 | 7.500969084750508e-08 | `>= 0` |
+| Coefficient orthogonality error | 4.441956838999741e-16 | 4.441943027585409e-16 | `< 1e-8` |
+| Final density RMS / tolerance | 9.029731492295125e-12 / 2e-07 | 1.3301419498906228e-10 / 2e-07 | below configured tolerance |
+| Final energy change / tolerance (Ha) | 5.796081947728737e-10 / 7.349864435130998e-09 | 1.0827710561489567e-08 / 2e-07 | below converted configured tolerance |
+| Recomputed direct model energy (Ha) | -0.25851023734873285 | -0.31789638792188146 | exactly matched summary/history |
+| Direct vs corrected-eigenvalue error (Ha) | 1.0727330135296143e-10 | 6.624436554858448e-10 | below bounds 1.1269652817996169e-08 / 2.3863120914149249e-08 |
+| Effective-potential composition error | 2.7755575615628914e-17 | 2.7755575615628914e-17 | round-off only |
+
+All five stored real-space fields and all wavefunction arrays were finite in both cases.  Each 101-row DOS was finite, nonnegative, and energy-sorted.  The recomputed charge and total model energy matched the corresponding serialized summary/history values exactly at float precision.
 
 ## Known limitations and extension seams
 
