@@ -1,5 +1,7 @@
 import numpy as np
 import pytest
+from scipy.sparse.linalg import LinearOperator
+from types import SimpleNamespace
 
 from mini_dft.basis import PlaneWaveBasis
 from mini_dft.eigensolver import solve_lowest
@@ -15,6 +17,28 @@ def make_hamiltonian(constant: float = 0.0) -> Hamiltonian:
     basis = PlaneWaveBasis.from_cutoff(lattice, encut=1.0)
     grid = FFTGrid.from_basis(basis)
     return Hamiltonian(basis, grid, np.full(grid.shape, constant))
+
+
+class DiagonalHamiltonian:
+    """Small matrix-free diagonal operator for solver numerical regressions."""
+
+    def __init__(self, diagonal: np.ndarray) -> None:
+        self.diagonal = np.asarray(diagonal, dtype=float)
+        self.basis = SimpleNamespace(
+            npw=self.diagonal.size, kinetic_energies=self.diagonal
+        )
+        self.local_potential = np.zeros(1)
+
+    def apply(self, coefficients: np.ndarray) -> np.ndarray:
+        return self.diagonal * np.asarray(coefficients, dtype=np.complex128)
+
+    def apply_many(self, coefficients: np.ndarray) -> np.ndarray:
+        return self.diagonal * np.asarray(coefficients, dtype=np.complex128)
+
+    def as_linear_operator(self) -> LinearOperator:
+        return LinearOperator(
+            (self.basis.npw, self.basis.npw), matvec=self.apply, dtype=np.complex128
+        )
 
 
 def test_solver_returns_lowest_free_electron_states_with_small_residuals():
@@ -70,3 +94,33 @@ def test_solver_rejects_noninteger_or_out_of_range_band_counts():
         solve_lowest(hamiltonian, hamiltonian.basis.npw + 1, 1e-11, 1000)
     with pytest.raises(ValueError, match="n_bands"):
         solve_lowest(hamiltonian, 1.5, 1e-11, 1000)
+
+
+def test_sparse_solver_rejects_large_scale_candidates_with_poor_residuals():
+    """Catch cancellation that hides inaccurate unshifted large-scale states."""
+    hamiltonian = DiagonalHamiltonian(1.0e16 + 4.0 * np.arange(8))
+
+    with pytest.raises(RuntimeError, match="unshifted residual"):
+        solve_lowest(hamiltonian, n_bands=2, tolerance=1e-12, max_iterations=1000)
+
+
+def test_sparse_solver_refines_close_nondegenerate_candidate_subspace(monkeypatch):
+    """Catch QR rotations that retain stale eigenvalues for close distinct states."""
+    import mini_dft.eigensolver as eigensolver
+
+    separation = 5.0e-8
+    hamiltonian = DiagonalHamiltonian(np.array([0.0, separation, 1.0, 2.0]))
+
+    def close_nonorthogonal_candidates(*_args, **_kwargs):
+        candidates = np.zeros((hamiltonian.basis.npw, 2), dtype=np.complex128)
+        candidates[:2, 0] = (1.0, 1.0)
+        candidates[:2, 1] = (1.0, -1.0)
+        return np.array([0.0, separation]), candidates / np.sqrt(2.0)
+
+    monkeypatch.setattr(eigensolver, "eigsh", close_nonorthogonal_candidates)
+
+    result = solve_lowest(hamiltonian, n_bands=2, tolerance=1e-8, max_iterations=100)
+
+    assert np.allclose(result.eigenvalues, [0.0, separation], atol=1e-14)
+    assert orthonormality_error(result.coefficients) < 1e-12
+    assert np.max(result.residual_norms) < 1e-12
