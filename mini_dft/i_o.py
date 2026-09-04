@@ -1,5 +1,6 @@
-"""YAML input loading and validation for Mini-DFT systems."""
+"""YAML input loading, validation, and result serialization for Mini-DFT."""
 
+import csv
 from collections.abc import Mapping, Sequence
 from numbers import Real
 from pathlib import Path
@@ -8,8 +9,11 @@ from typing import Any
 import numpy as np
 import yaml
 
-from .constants import energy_to_hartree, length_to_bohr
+from .constants import HARTREE_TO_EV, energy_to_hartree, length_to_bohr
+from .density import density_integral
+from .dos import gaussian_dos
 from .lattice import Lattice
+from .scf import SCFResult
 from .system import (
     CosinePotentialConfig,
     DOSConfig,
@@ -58,6 +62,162 @@ def load_system(path: str | Path) -> SystemConfig:
         dos=dos,
         input_length_unit=length_unit,
         input_energy_unit=energy_unit,
+    )
+
+
+def write_results(result: SCFResult, system: SystemConfig, output_dir: str | Path) -> None:
+    """Write a complete SCF state using portable, deterministic file schemas.
+
+    Numeric energies in all output files use Hartree internally and include an
+    explicit electron-volt conversion where a second representation is useful.
+    """
+    output = Path(output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    _write_summary(result, system, output / "summary.yaml")
+    _write_history(result, output / "scf_history.csv")
+    _write_eigenvalues(result, output / "eigenvalues.csv")
+    if system.dos.enabled:
+        _write_dos(result, system, output / "dos.csv")
+    _write_fields(result, output / "fields.npz")
+    _write_wavefunctions(result, output / "wavefunctions.npz")
+
+
+def _write_summary(result: SCFResult, system: SystemConfig, path: Path) -> None:
+    energy = result.energy
+    energies = {
+        f"{name}_hartree": float(value)
+        for name, value in (
+            ("kinetic", energy.kinetic),
+            ("external", energy.external),
+            ("hartree", energy.hartree),
+            ("xc", energy.xc),
+            ("total", energy.total),
+        )
+    }
+    energies.update(
+        {
+            f"{name}_ev": float(value) * HARTREE_TO_EV
+            for name, value in (
+                ("kinetic", energy.kinetic),
+                ("external", energy.external),
+                ("hartree", energy.hartree),
+                ("xc", energy.xc),
+                ("total", energy.total),
+            )
+        }
+    )
+    summary = {
+        "converged": bool(result.converged),
+        "iterations": int(result.iterations),
+        "message": result.message,
+        "input_units": {
+            "length": system.input_length_unit,
+            "energy": system.input_energy_unit,
+        },
+        "system": {
+            "electrons": int(system.electrons),
+            "encut_hartree": float(system.encut),
+            "bands": int(system.bands),
+        },
+        "basis": {"npw": int(result.basis.npw), "fft_shape": list(result.grid.shape)},
+        "charge_integral": float(density_integral(result.density, result.grid)),
+        "hartree_g0": "zero_neutralizing_background",
+        "energies": energies,
+    }
+    with path.open("w", encoding="utf-8", newline="") as summary_file:
+        yaml.safe_dump(summary, summary_file, sort_keys=False)
+
+
+def _write_history(result: SCFResult, path: Path) -> None:
+    fieldnames = [
+        "iter",
+        "density_rms",
+        "delta_energy_hartree",
+        "model_energy_hartree",
+        "model_energy_ev",
+        "eigenvalue_energy_hartree",
+        "kinetic_hartree",
+        "external_hartree",
+        "hartree_hartree",
+        "xc_hartree",
+    ]
+    rows = (
+        {
+            "iter": iteration.iteration,
+            "density_rms": iteration.density_rms,
+            "delta_energy_hartree": iteration.energy_delta,
+            "model_energy_hartree": iteration.energy.total,
+            "model_energy_ev": iteration.energy.total * HARTREE_TO_EV,
+            "eigenvalue_energy_hartree": iteration.eigenvalue_energy,
+            "kinetic_hartree": iteration.energy.kinetic,
+            "external_hartree": iteration.energy.external,
+            "hartree_hartree": iteration.energy.hartree,
+            "xc_hartree": iteration.energy.xc,
+        }
+        for iteration in result.history
+    )
+    _write_csv(path, fieldnames, rows)
+
+
+def _write_eigenvalues(result: SCFResult, path: Path) -> None:
+    fieldnames = ["band", "eigenvalue_hartree", "eigenvalue_ev", "occupation"]
+    rows = (
+        {
+            "band": index + 1,
+            "eigenvalue_hartree": eigenvalue,
+            "eigenvalue_ev": eigenvalue * HARTREE_TO_EV,
+            "occupation": occupation,
+        }
+        for index, (eigenvalue, occupation) in enumerate(
+            zip(result.eigenvalues, result.occupations, strict=True)
+        )
+    )
+    _write_csv(path, fieldnames, rows)
+
+
+def _write_dos(result: SCFResult, system: SystemConfig, path: Path) -> None:
+    dos = gaussian_dos(
+        result.eigenvalues,
+        result.occupations,
+        points=system.dos.points,
+        width=system.dos.width,
+    )
+    fieldnames = ["energy_hartree", "energy_ev", "dos_per_hartree"]
+    rows = (
+        {
+            "energy_hartree": energy,
+            "energy_ev": energy * HARTREE_TO_EV,
+            "dos_per_hartree": value,
+        }
+        for energy, value in zip(dos.energies, dos.values, strict=True)
+    )
+    _write_csv(path, fieldnames, rows)
+
+
+def _write_csv(path: Path, fieldnames: list[str], rows: Any) -> None:
+    with path.open("w", encoding="utf-8", newline="") as output_file:
+        writer = csv.DictWriter(output_file, fieldnames=fieldnames, lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _write_fields(result: SCFResult, path: Path) -> None:
+    np.savez_compressed(
+        path,
+        density=np.asarray(result.density, dtype=float),
+        ionic_potential=np.asarray(result.potentials.ionic, dtype=float),
+        hartree_potential=np.asarray(result.potentials.hartree, dtype=float),
+        xc_potential=np.asarray(result.potentials.xc, dtype=float),
+        effective_potential=np.asarray(result.potentials.effective, dtype=float),
+    )
+
+
+def _write_wavefunctions(result: SCFResult, path: Path) -> None:
+    np.savez_compressed(
+        path,
+        g_indices=np.asarray(result.basis.g_indices, dtype=np.int64),
+        g_vectors=np.asarray(result.basis.g_vectors, dtype=float),
+        coefficients=np.asarray(result.coefficients, dtype=np.complex128),
     )
 
 
