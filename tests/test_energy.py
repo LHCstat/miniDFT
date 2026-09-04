@@ -109,6 +109,37 @@ def test_energy_rejects_fractional_occupations():
         )
 
 
+def test_energy_paths_reject_occupations_with_nonzero_imaginary_parts():
+    """Catch complex occupation coercion at direct and eigenvalue public boundaries."""
+    grid = make_grid()
+    coefficients = np.eye(grid.basis.npw, dtype=np.complex128)[:1]
+    density = np.full(grid.shape, 2.0 / grid.volume)
+    hartree = hartree_from_density(density, grid)
+    xc = lda_pz81(density, grid)
+    occupations = np.array([2.0 + 1.0j])
+
+    with pytest.raises(ValueError, match="occupations"):
+        calculate_energy(
+            coefficients,
+            occupations,
+            density,
+            np.zeros(grid.shape),
+            hartree,
+            xc,
+            grid,
+        )
+    with pytest.raises(ValueError, match="occupations"):
+        eigenvalue_energy(
+            np.array([0.0]),
+            occupations,
+            density,
+            hartree.potential,
+            xc.potential,
+            xc.energy,
+            grid,
+        )
+
+
 def test_calculate_energy_integrates_nonuniform_hartree_potential_directly():
     """Catch direct energy that trusts a stale HartreeResult.energy scalar."""
     grid = make_grid()

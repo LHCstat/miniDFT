@@ -48,6 +48,15 @@ def test_density_rejects_noninteger_spatial_orbital_occupations(occupations):
         density_from_coefficients(coefficients, occupations, grid)
 
 
+def test_density_rejects_occupations_with_nonzero_imaginary_parts():
+    """Catch float coercion that discards an invalid occupation's imaginary part."""
+    grid = make_grid()
+    coefficients = np.eye(grid.basis.npw, dtype=np.complex128)[:1]
+
+    with pytest.raises(ValueError, match="occupations"):
+        density_from_coefficients(coefficients, np.array([2.0 + 1.0j]), grid)
+
+
 @pytest.mark.parametrize(
     "density",
     [

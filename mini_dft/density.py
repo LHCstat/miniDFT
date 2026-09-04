@@ -40,9 +40,12 @@ def density_integral(density: np.ndarray, grid: FFTGrid) -> float:
 
 def _occupations(occupations: np.ndarray, n_bands: int) -> np.ndarray:
     try:
-        occupation_array = np.asarray(occupations, dtype=float)
+        complex_occupations = np.asarray(occupations, dtype=np.complex128)
     except (TypeError, ValueError) as exc:
         raise ValueError("occupations: expected finite 0.0 or 2.0 values") from exc
+    if np.any(complex_occupations.imag != 0.0):
+        raise ValueError("occupations: expected real-valued 0.0 or 2.0 values")
+    occupation_array = complex_occupations.real
     if occupation_array.ndim != 1 or occupation_array.shape[0] != n_bands:
         raise ValueError(
             "occupations: expected shape "
