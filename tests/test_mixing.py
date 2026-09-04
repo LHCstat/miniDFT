@@ -59,6 +59,16 @@ def test_mix_density_rejects_materially_negative_values():
         mix_density(density, output_density, 1.0, 2.0, grid)
 
 
+@pytest.mark.parametrize("electrons", [1, 1.5, 3])
+def test_mix_density_rejects_odd_or_fractional_target_electron_counts(electrons):
+    """Catch target charges outside the v0.1 even-electron occupation domain."""
+    grid = make_grid()
+    density = np.full(grid.shape, 2.0 / grid.volume)
+
+    with pytest.raises(ValueError, match="electrons"):
+        mix_density(density, density, 1.0, electrons, grid)
+
+
 def test_density_rms_residual_matches_direct_grid_mean():
     """Catch residuals that are normalized by charge or cell volume instead of points."""
     input_density = np.array([[[1.0, 2.0]], [[3.0, 4.0]]])

@@ -58,14 +58,16 @@ def _alpha(alpha: float) -> float:
 
 
 def _electron_count(electrons: float) -> float:
-    if isinstance(electrons, bool):
-        raise ValueError("electrons: expected a non-negative finite number")
+    if isinstance(electrons, bool) or not isinstance(
+        electrons, (int, float, np.integer, np.floating)
+    ):
+        raise ValueError("electrons: expected a non-negative even integer")
     try:
         value = float(electrons)
     except (TypeError, ValueError) as exc:
-        raise ValueError("electrons: expected a non-negative finite number") from exc
-    if not np.isfinite(value) or value < 0.0:
-        raise ValueError("electrons: expected a non-negative finite number")
+        raise ValueError("electrons: expected a non-negative even integer") from exc
+    if not np.isfinite(value) or value < 0.0 or not value.is_integer() or int(value) % 2:
+        raise ValueError("electrons: expected a non-negative even integer")
     return value
 
 

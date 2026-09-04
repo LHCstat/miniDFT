@@ -46,6 +46,7 @@ def calculate_energy(
     occupation_array = _occupations(occupations, coefficient_array.shape[0])
     density_real = _real_field(density, grid, "density")
     external_real = _real_field(external_potential, grid, "external_potential")
+    hartree_potential = _real_field(hartree.potential, grid, "hartree.potential")
 
     kinetic = float(
         np.einsum(
@@ -56,7 +57,7 @@ def calculate_energy(
         )
     )
     external = float(grid.integrate(density_real * external_real))
-    hartree_energy = _finite_scalar(hartree.energy, "hartree.energy")
+    hartree_energy = float(0.5 * grid.integrate(density_real * hartree_potential))
     xc_energy = _finite_scalar(xc.energy, "xc.energy")
     return EnergyComponents(kinetic, external, hartree_energy, xc_energy)
 

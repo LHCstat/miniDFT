@@ -39,20 +39,32 @@ def density_integral(density: np.ndarray, grid: FFTGrid) -> float:
 
 
 def _occupations(occupations: np.ndarray, n_bands: int) -> np.ndarray:
-    occupation_array = np.asarray(occupations, dtype=float)
+    try:
+        occupation_array = np.asarray(occupations, dtype=float)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("occupations: expected finite 0.0 or 2.0 values") from exc
     if occupation_array.ndim != 1 or occupation_array.shape[0] != n_bands:
         raise ValueError(
             "occupations: expected shape "
             f"({n_bands},), received {occupation_array.shape}"
         )
-    if not np.all(np.isfinite(occupation_array)) or np.any(occupation_array < 0.0):
-        raise ValueError("occupations: expected finite non-negative values")
+    if (
+        not np.all(np.isfinite(occupation_array))
+        or not np.all((occupation_array == 0.0) | (occupation_array == 2.0))
+    ):
+        raise ValueError("occupations: expected finite 0.0 or 2.0 values")
     return occupation_array
 
 
 def _real_field(field: np.ndarray, grid: FFTGrid, name: str) -> np.ndarray:
-    field_array = np.asarray(field)
-    grid.integrate(field_array)
+    try:
+        field_array = np.asarray(field, dtype=np.complex128)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"{name}: expected a finite real field with shape {grid.shape}"
+        ) from exc
+    if field_array.shape != grid.shape:
+        raise ValueError(f"{name}: expected shape {grid.shape}, received {field_array.shape}")
     if not np.all(np.isfinite(field_array)):
         raise ValueError(f"{name}: expected finite values")
     if np.iscomplexobj(field_array) and np.max(np.abs(field_array.imag)) > 1e-11:
