@@ -122,8 +122,8 @@ All five stored real-space fields and all wavefunction arrays were finite in bot
 - LDA is intentionally local and simple; GGA/meta-GGA would extend `xc.py` and `PotentialSet` inputs.
 - Linear mixing is robust for the small examples but not a production accelerator.  Pulay/Kerker strategies can replace `mix_density` without changing the SCF state/result boundary.
 - The sparse eigensolver is matrix-free for normal cases; its dense fallback is intentionally limited to small dimensions where ARPACK cannot request the desired count.
-- A reused output directory can retain `dos.csv` from a previous DOS-enabled run if DOS is later disabled.  Use a fresh directory until Task 10 triages stale-output cleanup.
-- Task 10 will also triage the deferred edge observations: single-band `orthonormality_error`, exact Hartree/XC batched-shape error wording, explicit basis/grid identity validation, and the accepted one-point DOS case.
+- A reused output directory can retain `dos.csv` from a previous DOS-enabled run if DOS is later disabled.  Task 10 left this as a documented limitation, with remediation explicitly deferred to the final whole-branch review; use a fresh output directory when file membership matters.
+- Task 10 completed with the remaining non-blocking edge observations explicitly deferred to the final whole-branch review: batched coordinate test coverage, single-band `orthonormality_error`, exact Hartree/XC batched-shape error wording, explicit basis/grid identity validation, nonconverged invariant coverage, the accepted `dos.points == 1` case, and wording in the original `tests/test.py`.
 
 ## Documentation inventory
 
