@@ -29,7 +29,12 @@ def hartree_from_density(density: np.ndarray, grid: FFTGrid) -> HartreeResult:
     reciprocal_axes = [np.fft.fftfreq(size) * size for size in grid.shape]
     indices = np.stack(np.meshgrid(*reciprocal_axes, indexing="ij"), axis=-1)
     vectors = indices @ grid.basis.lattice.B.T
-    squared = np.sum(vectors * vectors, axis=-1)
+    raw_squared = np.sum(vectors * vectors, axis=-1)
+    conjugate = np.ix_(*[(-np.arange(size)) % size for size in grid.shape])
+    # Nyquist indices are self-negative in an even FFT axis.  Averaging the
+    # aliased conjugate pair keeps this real reciprocal-space kernel Hermitian
+    # in skew cells, where their raw Cartesian norms can otherwise differ.
+    squared = 0.5 * (raw_squared + raw_squared[conjugate])
     potential_fourier = np.zeros(grid.shape, dtype=np.complex128)
     nonzero = squared > 0.0
     potential_fourier[nonzero] = (

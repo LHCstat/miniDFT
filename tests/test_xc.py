@@ -43,6 +43,17 @@ def test_zero_density_has_exact_finite_lda_outputs():
     assert np.all(np.isfinite(result.energy_per_particle))
 
 
+def test_positive_subnormal_density_has_finite_analytic_lda_limit():
+    """Catch direct r_s division overflowing before the zero-density limit is reached."""
+    grid = make_grid()
+
+    result = lda_pz81(np.full(grid.shape, 1e-320), grid)
+
+    assert np.all(np.isfinite(result.potential))
+    assert np.all(np.isfinite(result.energy_per_particle))
+    assert np.isfinite(result.energy)
+
+
 @pytest.mark.parametrize("density", [1.0, 3.0 / (32.0 * np.pi)])
 def test_pz81_matches_independent_reference_on_both_rs_branches(density: float):
     """Catch incorrect PZ81 branch constants or correlation-potential derivative."""

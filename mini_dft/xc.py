@@ -32,32 +32,34 @@ def lda_pz81(density: np.ndarray, grid: FFTGrid) -> XCResult:
     potential = np.zeros(grid.shape, dtype=float)
     positive = density_real > 0.0
     n = density_real[positive]
-    rs = (3.0 / (4.0 * np.pi * n)) ** (1.0 / 3.0)
+    rs_inverse = np.cbrt(4.0 * np.pi * n / 3.0)
 
     eps_x = -0.75 * (3.0 / np.pi) ** (1.0 / 3.0) * n ** (1.0 / 3.0)
     v_x = (4.0 / 3.0) * eps_x
-    eps_c = np.empty_like(rs)
-    deps_c_drs = np.empty_like(rs)
-    high_density = rs < 1.0
+    eps_c = np.empty_like(rs_inverse)
+    v_c = np.empty_like(rs_inverse)
+    high_density = rs_inverse > 1.0
     low_density = ~high_density
     if np.any(high_density):
-        r = rs[high_density]
+        r = 1.0 / rs_inverse[high_density]
         eps_c[high_density] = (
             0.0311 * np.log(r) - 0.048 + 0.0020 * r * np.log(r) - 0.0116 * r
         )
-        deps_c_drs[high_density] = (
+        deps_c_drs = (
             0.0311 / r + 0.0020 * (np.log(r) + 1.0) - 0.0116
         )
+        v_c[high_density] = eps_c[high_density] - r * deps_c_drs / 3.0
     if np.any(low_density):
-        r = rs[low_density]
-        denominator = 1.0 + 1.0529 * np.sqrt(r) + 0.3334 * r
-        eps_c[low_density] = -0.1423 / denominator
-        deps_c_drs[low_density] = 0.1423 * (
-            1.0529 / (2.0 * np.sqrt(r)) + 0.3334
+        inverse_r = rs_inverse[low_density]
+        denominator = inverse_r + 1.0529 * np.sqrt(inverse_r) + 0.3334
+        eps_c[low_density] = -0.1423 * inverse_r / denominator
+        rs_deps_c = 0.1423 * inverse_r * (
+            1.0529 * np.sqrt(inverse_r) / 2.0 + 0.3334
         ) / denominator**2
+        v_c[low_density] = eps_c[low_density] - rs_deps_c / 3.0
 
     energy_per_particle[positive] = eps_x + eps_c
-    potential[positive] = v_x + eps_c - rs * deps_c_drs / 3.0
+    potential[positive] = v_x + v_c
     if not np.all(np.isfinite(energy_per_particle)) or not np.all(np.isfinite(potential)):
         raise ValueError("LDA PZ81: expected finite outputs")
     energy = float(grid.integrate(density_real * energy_per_particle))
