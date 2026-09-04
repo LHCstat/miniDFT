@@ -1,4 +1,5 @@
 import csv
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -129,3 +130,26 @@ def test_cli_returns_nonconvergence_code_after_writing_diagnostics(tmp_path):
     summary = yaml.safe_load((output / "summary.yaml").read_text(encoding="utf-8"))
     assert summary["converged"] is False
     assert (output / "scf_history.csv").is_file()
+
+
+@pytest.mark.parametrize(
+    "example_path",
+    [
+        Path("mini_dft/input.yaml"),
+        Path("examples/gaussian_atoms.yaml"),
+    ],
+)
+def test_repository_examples_converge_and_write_reloadable_results(tmp_path, example_path):
+    """Keep the checked-in cosine and Gaussian examples runnable end to end."""
+    system = load_system(example_path)
+    result = SCFRunner(system).run()
+    assert result.converged, result.message
+
+    output = tmp_path / example_path.stem
+    write_results(result, system, output)
+
+    summary = yaml.safe_load((output / "summary.yaml").read_text(encoding="utf-8"))
+    assert summary["converged"] is True
+    assert summary["charge_integral"] == pytest.approx(float(system.electrons))
+    with np.load(output / "fields.npz") as fields:
+        assert fields["density"].shape == result.grid.shape
