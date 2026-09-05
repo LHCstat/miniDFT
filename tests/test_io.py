@@ -3,7 +3,7 @@ from copy import deepcopy
 import pytest
 import yaml
 
-from mini_dft.constants import ANGSTROM_TO_BOHR, EV_TO_HARTREE
+from mini_dft.constants import ANGSTROM_TO_BOHR, BOHR_TO_ANGSTROM, EV_TO_HARTREE
 from mini_dft.i_o import load_system
 from mini_dft.system import CosinePotentialConfig
 
@@ -48,6 +48,9 @@ def test_load_system_converts_values_to_atomic_units(tmp_path):
     assert isinstance(system.potential, CosinePotentialConfig)
     assert system.potential.amplitudes.tolist() == pytest.approx([-0.5, -0.5])
     assert system.dos.width == pytest.approx(1.0)
+    assert system.scf.density_tolerance == pytest.approx(
+        1.0e-7 * BOHR_TO_ANGSTROM**3
+    )
     assert system.scf.energy_tolerance == pytest.approx(1.0e-8)
     assert system.input_energy_unit == "ev"
 
@@ -84,6 +87,15 @@ def test_load_system_requires_all_cosine_amplitudes(tmp_path):
     contents["potential"]["amplitudes"] = [-1.0]
 
     with pytest.raises(ValueError, match="potential.amplitudes"):
+        load_system(_write_input(tmp_path, contents))
+
+
+def test_load_system_requires_at_least_two_dos_points(tmp_path):
+    """Catch a YAML DOS request whose single sample cannot span an interval."""
+    contents = _valid_input()
+    contents["dos"]["points"] = 1
+
+    with pytest.raises(ValueError, match="dos.points: expected an integer of at least 2"):
         load_system(_write_input(tmp_path, contents))
 
 

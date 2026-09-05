@@ -1,4 +1,6 @@
 import csv
+import re
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -6,6 +8,7 @@ import pytest
 import yaml
 
 from mini_dft.__main__ import main
+from mini_dft.constants import BOHR_TO_ANGSTROM, HARTREE_TO_EV
 from mini_dft.density import density_integral
 from mini_dft.i_o import load_system, write_results
 from mini_dft.scf import SCFRunner
@@ -36,6 +39,22 @@ def _write_input(tmp_path, *, max_iterations: int = 80):
     return input_path
 
 
+@pytest.mark.parametrize(
+    ("example_path", "expected_density_tolerance"),
+    [
+        (Path("mini_dft/input.yaml"), 2.0e-7 * BOHR_TO_ANGSTROM**3),
+        (Path("examples/gaussian_atoms.yaml"), 2.0e-7),
+    ],
+)
+def test_repository_examples_convert_density_tolerance_to_bohr_inverse_cubed(
+    example_path, expected_density_tolerance
+):
+    """Catch example tolerances that retain their declared inverse-volume units."""
+    system = load_system(example_path)
+
+    assert system.scf.density_tolerance == pytest.approx(expected_density_tolerance)
+
+
 def test_write_results_preserves_complete_converged_state(tmp_path):
     """Catch output that drops fields, units, complex coefficients, or convergence diagnostics."""
     system = load_system(_write_input(tmp_path))
@@ -61,7 +80,9 @@ def test_write_results_preserves_complete_converged_state(tmp_path):
     assert summary["hartree_g0"] == "zero_neutralizing_background"
     assert summary["charge_integral"] == pytest.approx(density_integral(result.density, result.grid))
     assert summary["energies"]["total_hartree"] == pytest.approx(result.energy.total)
-    assert summary["energies"]["total_ev"] == pytest.approx(result.energy.total * 27.211386245988)
+    assert summary["energies"]["total_ev"] == pytest.approx(
+        result.energy.total * HARTREE_TO_EV
+    )
 
     with (output / "scf_history.csv").open(newline="", encoding="utf-8") as history_file:
         history = list(csv.DictReader(history_file))
@@ -82,6 +103,23 @@ def test_write_results_preserves_complete_converged_state(tmp_path):
         assert np.allclose(wavefunctions["coefficients"], result.coefficients)
 
 
+def test_write_results_removes_only_stale_dos_from_reused_output_directory(tmp_path):
+    """Catch DOS-disabled rewrites that leave a misleading prior DOS artifact."""
+    system = load_system(_write_input(tmp_path))
+    result = SCFRunner(system).run()
+    assert result.converged
+    output = tmp_path / "results"
+    write_results(result, system, output)
+    assert (output / "dos.csv").is_file()
+    sibling_dos = tmp_path / "dos.csv"
+    sibling_dos.write_text("outside output directory\n", encoding="utf-8")
+
+    write_results(result, replace(system, dos=replace(system.dos, enabled=False)), output)
+
+    assert not (output / "dos.csv").exists()
+    assert sibling_dos.read_text(encoding="utf-8") == "outside output directory\n"
+
+
 def test_cli_returns_success_and_writes_output_for_converged_system(tmp_path, capsys):
     """Catch a usable run that does not return success or serialize its result."""
     input_path = _write_input(tmp_path)
@@ -90,6 +128,42 @@ def test_cli_returns_success_and_writes_output_for_converged_system(tmp_path, ca
     assert main([str(input_path), "--output", str(output), "--quiet"]) == 0
     assert (output / "summary.yaml").is_file()
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    ("max_iterations", "expected_exit", "expected_status"),
+    [
+        (80, 0, "SCF converged"),
+        (1, 2, "maximum SCF iterations reached without convergence"),
+    ],
+)
+def test_cli_labels_progress_energies_and_prints_final_energy_in_hartree_and_ev(
+    tmp_path, capsys, max_iterations, expected_exit, expected_status
+):
+    """Catch ambiguous progress units or a missing final energy on either exit path."""
+    input_path = _write_input(tmp_path, max_iterations=max_iterations)
+    output = tmp_path / f"results-{max_iterations}"
+
+    assert main([str(input_path), "--output", str(output)]) == expected_exit
+
+    stdout = capsys.readouterr().out
+    header = stdout.splitlines()[0]
+    assert "delta_energy[Ha]" in header
+    assert "model_energy[Ha]" in header
+    assert expected_status in stdout
+    energy_line = re.search(
+        r"final model energy: (?P<hartree>[-+0-9.e]+) Ha = "
+        r"(?P<ev>[-+0-9.e]+) eV",
+        stdout,
+    )
+    assert energy_line is not None
+    summary = yaml.safe_load((output / "summary.yaml").read_text(encoding="utf-8"))
+    displayed_hartree = float(energy_line.group("hartree"))
+    displayed_ev = float(energy_line.group("ev"))
+    assert displayed_hartree == pytest.approx(
+        summary["energies"]["total_hartree"], rel=1.0e-12
+    )
+    assert displayed_ev == pytest.approx(displayed_hartree * HARTREE_TO_EV, rel=1.0e-12)
 
 
 def test_cli_reports_yaml_input_errors_without_traceback(tmp_path, capsys):

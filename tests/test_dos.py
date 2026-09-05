@@ -20,6 +20,12 @@ def test_gaussian_dos_integrates_occupied_states_and_orders_energies():
     assert np.trapezoid(result.values, result.energies) == pytest.approx(2.0, abs=2.0e-5)
 
 
+def test_gaussian_dos_requires_at_least_two_grid_points():
+    """Catch a one-point energy grid that cannot define an ordered DOS interval."""
+    with pytest.raises(ValueError, match="points: expected an integer of at least 2"):
+        gaussian_dos(np.array([-0.1]), np.array([2.0]), points=1, width=0.1)
+
+
 @pytest.mark.parametrize(
     ("eigenvalues", "occupations", "points", "width", "match"),
     [

@@ -99,6 +99,17 @@ def test_wavefunction_helpers_normalize_and_measure_orthonormality():
     assert orthonormality_error(normalized) == pytest.approx(0.0, abs=1e-12)
 
 
+def test_overlap_helpers_treat_one_coefficient_vector_as_one_band():
+    """Catch one-band overlaps collapsing to a scalar and breaking error checks."""
+    coefficients = normalize_coefficients(np.array([1.0 + 2.0j, -3.0j, 4.0]))
+
+    overlap = overlap_matrix(coefficients)
+
+    assert overlap.shape == (1, 1)
+    assert overlap[0, 0] == pytest.approx(1.0)
+    assert orthonormality_error(coefficients) == pytest.approx(0.0, abs=1e-12)
+
+
 def test_normalize_coefficients_rejects_zero_norm_vectors():
     """Catch silent propagation of invalid all-zero wavefunctions."""
     with pytest.raises(ValueError, match="coefficients: zero-norm wavefunction"):

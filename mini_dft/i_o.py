@@ -9,7 +9,12 @@ from typing import Any
 import numpy as np
 import yaml
 
-from .constants import HARTREE_TO_EV, energy_to_hartree, length_to_bohr
+from .constants import (
+    BOHR_TO_ANGSTROM,
+    HARTREE_TO_EV,
+    energy_to_hartree,
+    length_to_bohr,
+)
 from .density import density_integral
 from .dos import gaussian_dos
 from .lattice import Lattice
@@ -50,7 +55,7 @@ def load_system(path: str | Path) -> SystemConfig:
         raise ValueError("bands: expected at least electrons // 2")
 
     potential = _load_potential(root, length_unit, energy_unit)
-    scf = _load_scf(root, energy_unit)
+    scf = _load_scf(root, length_unit, energy_unit)
     dos = _load_dos(root, energy_unit)
     return SystemConfig(
         lattice=lattice,
@@ -76,8 +81,11 @@ def write_results(result: SCFResult, system: SystemConfig, output_dir: str | Pat
     _write_summary(result, system, output / "summary.yaml")
     _write_history(result, output / "scf_history.csv")
     _write_eigenvalues(result, output / "eigenvalues.csv")
+    dos_path = output / "dos.csv"
     if system.dos.enabled:
-        _write_dos(result, system, output / "dos.csv")
+        _write_dos(result, system, dos_path)
+    else:
+        dos_path.unlink(missing_ok=True)
     _write_fields(result, output / "fields.npz")
     _write_wavefunctions(result, output / "wavefunctions.npz")
 
@@ -346,7 +354,9 @@ def _load_gaussian_atoms_potential(
     return GaussianAtomsPotentialConfig(atoms=tuple(atoms))
 
 
-def _load_scf(root: Mapping[str, Any], energy_unit: str) -> SCFConfig:
+def _load_scf(
+    root: Mapping[str, Any], length_unit: str, energy_unit: str
+) -> SCFConfig:
     scf = _require_mapping(_require_key(root, "scf", "scf"), "scf")
     max_iterations = _require_integer(
         _require_key(scf, "max_iterations", "scf.max_iterations"), "scf.max_iterations"
@@ -356,6 +366,8 @@ def _load_scf(root: Mapping[str, Any], energy_unit: str) -> SCFConfig:
     density_tolerance = _require_positive_number(
         _require_key(scf, "density_tolerance", "scf.density_tolerance"), "scf.density_tolerance"
     )
+    if length_unit == "angstrom":
+        density_tolerance *= BOHR_TO_ANGSTROM**3
     energy_tolerance = energy_to_hartree(
         _require_positive_number(
             _require_key(scf, "energy_tolerance", "scf.energy_tolerance"), "scf.energy_tolerance"
@@ -392,8 +404,8 @@ def _load_dos(root: Mapping[str, Any], energy_unit: str) -> DOSConfig:
     if not isinstance(enabled, bool):
         raise ValueError("dos.enabled: expected a boolean")
     points = _require_integer(_require_key(dos, "points", "dos.points"), "dos.points")
-    if points < 1:
-        raise ValueError("dos.points: expected an integer of at least 1")
+    if points < 2:
+        raise ValueError("dos.points: expected an integer of at least 2")
     width = energy_to_hartree(
         _require_positive_number(_require_key(dos, "width", "dos.width"), "dos.width"), energy_unit
     )

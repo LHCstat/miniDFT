@@ -25,6 +25,19 @@ def test_uniform_density_has_zero_hartree_potential():
     assert abs(result.energy) < 1e-13
 
 
+def test_hartree_rejects_batched_density_with_contextual_exact_shape_error():
+    """Catch leading density dimensions reaching FFT and reciprocal indexing."""
+    grid = make_grid()
+    density = np.zeros((2, *grid.shape))
+
+    with pytest.raises(ValueError) as error:
+        hartree_from_density(density, grid)
+
+    assert str(error.value) == (
+        f"density: expected shape {grid.shape}, received {density.shape}"
+    )
+
+
 def test_cosine_density_matches_periodic_poisson_solution_and_energy():
     """Catch incorrect Fourier normalization or a missing 4*pi/G**2 factor."""
     grid = make_grid()

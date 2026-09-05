@@ -28,7 +28,7 @@ def gaussian_dos(
     """
     eigenvalue_array = _eigenvalues(eigenvalues)
     occupation_array = _occupations(occupations, eigenvalue_array.shape[0])
-    point_count = _positive_integer(points, "points")
+    point_count = _integer_at_least(points, "points", 2)
     gaussian_width = _positive_scalar(width, "width")
     margin = _positive_scalar(margin_sigmas, "margin_sigmas")
 
@@ -71,9 +71,9 @@ def _occupations(values: np.ndarray, bands: int) -> np.ndarray:
     return array
 
 
-def _positive_integer(value: int, name: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
-        raise ValueError(f"{name}: expected an integer of at least 1")
+def _integer_at_least(value: int, name: str, minimum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, Integral) or value < minimum:
+        raise ValueError(f"{name}: expected an integer of at least {minimum}")
     return int(value)
 
 

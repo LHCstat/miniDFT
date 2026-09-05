@@ -18,7 +18,10 @@ class HartreeResult:
 def hartree_from_density(density: np.ndarray, grid: FFTGrid) -> HartreeResult:
     """Solve periodic Poisson's equation after setting the G=0 mode to zero."""
     density_array = np.asarray(density)
-    grid.field_to_fourier(density_array)
+    if density_array.shape != grid.shape:
+        raise ValueError(
+            f"density: expected shape {grid.shape}, received {density_array.shape}"
+        )
     if not np.all(np.isfinite(density_array)):
         raise ValueError("density: expected finite values")
     if np.iscomplexobj(density_array) and np.max(np.abs(density_array.imag)) > 1e-11:

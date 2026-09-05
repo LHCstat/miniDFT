@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 import yaml
 
+from .constants import HARTREE_TO_EV
 from .i_o import load_system, write_results
 from .scf import SCFIteration, SCFRunner
 
@@ -23,7 +24,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     callback = None if arguments.quiet else _print_iteration
     if not arguments.quiet:
-        print("iter density_rms delta_energy model_energy")
+        print("iter density_rms delta_energy[Ha] model_energy[Ha]")
     try:
         system = load_system(arguments.input)
         result = SCFRunner(system).run(callback=callback)
@@ -34,6 +35,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if not arguments.quiet:
         print(result.message)
+        print(
+            f"final model energy: {result.energy.total:.12e} Ha = "
+            f"{result.energy.total * HARTREE_TO_EV:.12e} eV"
+        )
     return 0 if result.converged else 2
 
 

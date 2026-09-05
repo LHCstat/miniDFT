@@ -15,6 +15,8 @@ def normalize_coefficients(coefficients: np.ndarray) -> np.ndarray:
 def overlap_matrix(coefficients: np.ndarray) -> np.ndarray:
     """Return the band-by-band inner-product matrix."""
     coeff = np.asarray(coefficients, dtype=np.complex128)
+    if coeff.ndim == 1:
+        coeff = coeff[np.newaxis, :]
     return coeff.conj() @ coeff.T
 
 

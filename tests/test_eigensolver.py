@@ -84,6 +84,41 @@ def test_dense_fallback_returns_the_complete_small_spectrum():
     assert np.max(result.residual_norms) < 1e-8
 
 
+def test_dense_fallback_accepts_near_complete_request_at_256_plane_waves():
+    """Catch an off-by-one size cap that rejects the permitted dense boundary."""
+    diagonal = np.arange(256, dtype=float)
+    hamiltonian = DiagonalHamiltonian(diagonal)
+
+    result = solve_lowest(
+        hamiltonian, n_bands=255, tolerance=1e-10, max_iterations=1000
+    )
+
+    assert result.eigenvalues == pytest.approx(diagonal[:255], abs=1e-12)
+    assert result.coefficients.shape == (255, 256)
+    assert orthonormality_error(result.coefficients) < 1e-12
+
+
+def test_dense_fallback_rejects_near_complete_request_above_256_before_allocation(
+    monkeypatch,
+):
+    """Catch large near-complete requests allocating a quadratic dense matrix."""
+    import mini_dft.eigensolver as eigensolver
+
+    hamiltonian = DiagonalHamiltonian(np.arange(257, dtype=float))
+
+    def reject_dense_allocation(*_args, **_kwargs):
+        raise AssertionError("dense allocation attempted")
+
+    monkeypatch.setattr(eigensolver.np, "eye", reject_dense_allocation)
+
+    with pytest.raises(
+        ValueError, match=r"n_bands: requested 256.*257.*dense fallback.*256"
+    ):
+        solve_lowest(
+            hamiltonian, n_bands=256, tolerance=1e-10, max_iterations=1000
+        )
+
+
 def test_solver_rejects_noninteger_or_out_of_range_band_counts():
     """Catch invalid requests before passing an unusable count to SciPy."""
     hamiltonian = make_hamiltonian()

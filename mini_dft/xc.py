@@ -19,7 +19,10 @@ class XCResult:
 def lda_pz81(density: np.ndarray, grid: FFTGrid) -> XCResult:
     """Evaluate unpolarized PZ81 LDA, using its analytic zero-density limit."""
     density_array = np.asarray(density)
-    grid.integrate(density_array)
+    if density_array.shape != grid.shape:
+        raise ValueError(
+            f"density: expected shape {grid.shape}, received {density_array.shape}"
+        )
     if not np.all(np.isfinite(density_array)):
         raise ValueError("density: expected finite values")
     if np.iscomplexobj(density_array) and np.max(np.abs(density_array.imag)) > 1e-11:

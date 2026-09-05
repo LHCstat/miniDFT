@@ -22,7 +22,7 @@ Run the checked-in cosine model and put the results in a new directory:
 python -m mini_dft mini_dft/input.yaml --output output/cosine
 ```
 
-For a concise, script-friendly run, add `--quiet`.  Exit code `0` means SCF converged, `2` means a complete diagnostic output was written but the iteration limit was reached, and `1` means argument, input, or I/O validation failed.
+For a concise, script-friendly run, add `--quiet`.  Otherwise the progress-table energy columns are labelled in Hartree (`Ha`), and the final model energy is printed in both Hartree and eV whether the run converges or exhausts its iteration limit.  Exit code `0` means SCF converged, `2` means a complete diagnostic output was written but the iteration limit was reached, and `1` means argument, input, or I/O validation failed.
 
 Two small, regression-tested examples are included:
 
@@ -35,7 +35,7 @@ The first is expressed in eV and ångström and uses three weak cosine modes.  T
 
 ## YAML schema
 
-All dimensional values use the units declared at the top and are converted to atomic units when loaded.  `lattice.vectors` contains three real-space row vectors in the input file; the internal `Lattice.A` stores those vectors as columns.
+All dimensional values use the units declared at the top and are converted to atomic units when loaded.  In particular, `scf.density_tolerance` is an absolute density RMS in `units.length^-3` and is converted to Bohr^-3.  `lattice.vectors` contains three real-space row vectors in the input file; the internal `Lattice.A` stores those vectors as columns.
 
 ```yaml
 units:
@@ -53,14 +53,14 @@ potential:
   phases: [0.0, 0.0, 0.0]          # optional; defaults to zero
 scf:
   max_iterations: 80
-  density_tolerance: 2.0e-7
+  density_tolerance: 2.0e-7        # positive, in units.length^-3
   energy_tolerance: 2.0e-7         # expressed in units.energy
   mixing_alpha: 0.35               # (0, 1]
   eigensolver_tolerance: 1.0e-10
   eigensolver_max_iterations: 2000 # optional
 dos:
   enabled: true
-  points: 101                      # integer >= 1
+  points: 101                      # integer >= 2
   width: 0.10                      # positive, in units.energy
 ```
 
@@ -75,7 +75,7 @@ potential:
       width: 1.50
 ```
 
-Input loading validates field paths, dimensions, units, lattice volume, occupiable band count, scalar ranges, and potential-specific fields.  The complete mathematical and array contract is in [docs/MATHEMATICAL_CONVENTIONS.md](docs/MATHEMATICAL_CONVENTIONS.md).
+Input loading validates field paths, dimensions, units, lattice volume, occupiable band count, scalar ranges, and potential-specific fields.  A request for `npw - 1` or `npw` bands needs the dense eigensolver fallback: this is allowed only for `npw <= 256`; larger bases must request at most `npw - 2` bands.  The complete mathematical and array contract is in [docs/MATHEMATICAL_CONVENTIONS.md](docs/MATHEMATICAL_CONVENTIONS.md).
 
 ## Output files
 
@@ -86,11 +86,11 @@ Input loading validates field paths, dimensions, units, lattice volume, occupiab
 | `summary.yaml` | convergence status, iterations, input units, basis/grid dimensions, charge integral, `hartree_g0`, and final energy components in Hartree and eV |
 | `scf_history.csv` | one row per recorded SCF solve: density RMS, energy change, model/eigenvalue energy, and component energies |
 | `eigenvalues.csv` | one-based band index, eigenvalue in Hartree/eV, and occupation |
-| `dos.csv` | Gamma-point Gaussian-broadened energy grid and DOS; written only when `dos.enabled: true` |
+| `dos.csv` | Gamma-point Gaussian-broadened energy grid and DOS; written only when `dos.enabled: true`, and removed on a DOS-disabled rewrite of the same directory |
 | `fields.npz` | `density`, `ionic_potential`, `hartree_potential`, `xc_potential`, and `effective_potential` arrays |
 | `wavefunctions.npz` | `g_indices`, Cartesian `g_vectors`, and complex `coefficients` with shape `(bands, npw)` |
 
-`hartree_g0: zero_neutralizing_background` records the fixed-zero Hartree average convention.  A reused output directory with DOS disabled may retain an old `dos.csv`; use a clean output directory when output-file membership matters.
+`hartree_g0: zero_neutralizing_background` records the fixed-zero Hartree average convention.  Reusing an output directory with DOS disabled removes that directory's stale `dos.csv` while leaving other files untouched.
 
 ## Python API
 

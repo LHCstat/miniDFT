@@ -9,6 +9,9 @@ from .hamiltonian import Hamiltonian
 from .wavefunction import normalize_coefficients
 
 
+DENSE_FALLBACK_MAX_NPW = 256
+
+
 @dataclass(frozen=True)
 class EigenResult:
     """Eigenpairs and their Euclidean residual norms."""
@@ -37,7 +40,15 @@ def solve_lowest(
     if not isinstance(max_iterations, (int, np.integer)) or max_iterations < 1:
         raise ValueError("max_iterations: expected a positive integer")
 
-    if n_bands < npw - 1:
+    requires_dense_fallback = n_bands >= npw - 1
+    if requires_dense_fallback and npw > DENSE_FALLBACK_MAX_NPW:
+        raise ValueError(
+            f"n_bands: requested {n_bands} for a {npw}-plane-wave basis; "
+            f"requests above {npw - 2} require the dense fallback, which is "
+            f"limited to npw <= {DENSE_FALLBACK_MAX_NPW}"
+        )
+
+    if not requires_dense_fallback:
         spectral_shift = np.finfo(float).eps
         shifted_operator = LinearOperator(
             shape=(npw, npw),

@@ -4,7 +4,7 @@ This document is the implementation contract for Mini-DFT v0.1.  It names the co
 
 ## Units and lattice orientation
 
-`load_system` converts `bohr`/`angstrom` lengths with `length_to_bohr` and `hartree`/`ev` energies with `energy_to_hartree`.  All `SystemConfig` dimensional values and every numerical calculation thereafter use Hartree atomic units: \(\hbar=m_e=e=4\pi\epsilon_0=1\).
+`load_system` converts `bohr`/`angstrom` lengths with `length_to_bohr` and `hartree`/`ev` energies with `energy_to_hartree`.  The absolute density RMS `scf.density_tolerance` uses the declared inverse-volume unit: an Angstrom^-3 input is multiplied by `BOHR_TO_ANGSTROM ** 3`, while a Bohr^-3 input is unchanged.  All `SystemConfig` dimensional values and every numerical calculation thereafter use Hartree atomic units: \(\hbar=m_e=e=4\pi\epsilon_0=1\).
 
 YAML gives `lattice.vectors` as three **row** vectors.  `Lattice.from_row_vectors` transposes them, so internal `Lattice.A` has the real lattice vectors as columns:
 
@@ -48,6 +48,8 @@ The basis is stable-sorted by energy and integer components and explicitly place
 | one band coefficients | `coefficients` | `(npw,)`, complex |
 | many-band coefficients | `result.coefficients` | `(bands, npw)`, complex |
 | scalar grid field | `density`, `PotentialSet.*` | `grid.shape`, real |
+
+`overlap_matrix` treats a single `(npw,)` coefficient vector as a one-band batch and therefore returns a `(1, 1)` overlap; `orthonormality_error` follows the same convention.
 
 `FFTGrid.from_basis` chooses each grid size from `next_fast_len(max(1, 4 * max_abs_index + 1))`.  This represents differences \(\mathbf G-\mathbf G'\) of retained plane waves and therefore prevents circular aliasing in density and local-potential products.
 
@@ -105,7 +107,7 @@ For `gaussian_atoms`, the implementation first forms the component-wise wrapped 
 then evaluates the 27 candidates \(A(\delta+\mathbf t)\) for
 \(\mathbf t\in\{-1,0,1\}^3\), selects their smallest Cartesian squared norm, and sums `depth * exp(-distance_squared / (2 * width**2))`.  This is the approved v0.1 27-neighbor search, not a globally guaranteed closest-image algorithm.  It is reliable for the small/reasonably reduced teaching cells supplied here; highly skew or non-reduced cells can require a wider lattice-vector search to find the global closest image.  Both potential types are local educational model fields.
 
-`hartree_from_density` computes scalar density Fourier coefficients.  For ordinary non-aliased nonzero FFT modes it uses
+`hartree_from_density` and `lda_pz81` require the exact scalar-field shape `density.shape == grid.shape`; leading batch axes are rejected before any FFT, integration, or reciprocal indexing.  `hartree_from_density` computes scalar density Fourier coefficients.  For ordinary non-aliased nonzero FFT modes it uses
 
 \[
 V_H(\mathbf G)=\frac{4\pi n(\mathbf G)}{|\mathbf G|^2}.
@@ -123,14 +125,14 @@ The code leaves the zero component of `potential_fourier` at zero.  Thus `V_H(G=
 
 and the unpolarized Perdew–Zunger 1981 correlation branches.  It uses a positive-density mask so that \(n=0\) has finite analytic-limit zero arrays.  `XCResult` stores `potential`, `energy_per_particle`, and the quadrature `energy`.
 
-`PotentialSet.effective` is `ionic + hartree + xc`.  `Hamiltonian.apply` represents
+`PotentialSet.effective` is `ionic + hartree + xc`.  A `Hamiltonian` requires `grid.basis is basis` by object identity, preventing equal-sized but differently labelled reciprocal bases from being mixed.  `Hamiltonian.apply` represents
 
 \[
 (H C)_{\mathbf G}=\tfrac12|\mathbf G|^2C_{\mathbf G}
  +\mathcal F\{V_{\rm eff}(\mathbf r)\psi(\mathbf r)\}_{\mathbf G},
 \]
 
-using `coefficients_to_real`, multiplication by the real field, and `real_to_coefficients`.  `as_linear_operator()` advertises `dtype=np.complex128`; complex plane-wave coefficients are never treated as a real eigenproblem.
+using `coefficients_to_real`, multiplication by the real field, and `real_to_coefficients`.  `as_linear_operator()` advertises `dtype=np.complex128`; complex plane-wave coefficients are never treated as a real eigenproblem.  `solve_lowest` normally uses matrix-free `eigsh`; requests with `n_bands >= npw - 1` use a deterministic dense fallback only when `npw <= 256`.  Larger incompatible requests are rejected before allocating an `npw`-square matrix.
 
 ## Energies and SCF test
 
@@ -149,4 +151,4 @@ E_{xc}=\int n\epsilon_{xc}(n).
 
 This **does not include ion-ion energy** and must not be interpreted as a real-material total energy.  `eigenvalue_energy` separately evaluates the double-counting-corrected eigenvalue expression as an internal diagnostic.
 
-`SCFRunner` initializes `density` to `electrons / lattice.volume`, constructs a `Hamiltonian`, calls `solve_lowest`, forms `output_density`, records the direct energy, then linearly mixes.  It accepts convergence only after both `density_rms <= density_tolerance` and `energy_delta <= energy_tolerance` and an additional un-mixed consistency solve pass.  Exhaustion returns an `SCFResult` with `converged=False` rather than silently reporting success.
+`SCFRunner` initializes `density` to `electrons / lattice.volume`, constructs a `Hamiltonian`, calls `solve_lowest`, forms `output_density`, records the direct energy, then linearly mixes.  It accepts convergence only after both `density_rms <= density_tolerance` (both in Bohr^-3 internally) and `energy_delta <= energy_tolerance` and an additional un-mixed consistency solve pass.  Exhaustion returns an `SCFResult` with `converged=False` rather than silently reporting success.

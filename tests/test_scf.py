@@ -173,7 +173,51 @@ def test_scf_iteration_limit_returns_a_complete_nonconverged_result():
     assert result.eigenvalues.shape == (system.bands,)
     assert result.coefficients.shape == (system.bands, result.basis.npw)
     assert result.occupations.shape == (system.bands,)
+    assert density_integral(result.density, result.grid) == pytest.approx(
+        system.electrons, abs=1.0e-10
+    )
+    for array in (
+        result.density,
+        result.potentials.ionic,
+        result.potentials.hartree,
+        result.potentials.xc,
+        result.potentials.effective,
+        result.eigenvalues,
+        result.coefficients,
+        result.occupations,
+    ):
+        assert np.all(np.isfinite(array))
+    assert np.all(np.diff(result.eigenvalues) >= -1.0e-12)
+    assert orthonormality_error(result.coefficients) < 1.0e-9
     assert np.isfinite(result.energy.total)
+
+    reconstructed_hartree = hartree_from_density(result.density, result.grid)
+    reconstructed_xc = lda_pz81(result.density, result.grid)
+    assert result.potentials.hartree == pytest.approx(
+        reconstructed_hartree.potential, abs=1.0e-12
+    )
+    assert result.potentials.xc == pytest.approx(
+        reconstructed_xc.potential, abs=1.0e-12
+    )
+    assert result.potentials.effective == pytest.approx(
+        result.potentials.ionic
+        + reconstructed_hartree.potential
+        + reconstructed_xc.potential,
+        abs=1.0e-12,
+    )
+    reconstructed_energy = calculate_energy(
+        result.coefficients,
+        result.occupations,
+        result.density,
+        result.potentials.ionic,
+        reconstructed_hartree,
+        reconstructed_xc,
+        result.grid,
+    )
+    for component in ("kinetic", "external", "hartree", "xc", "total"):
+        assert getattr(result.energy, component) == pytest.approx(
+            getattr(reconstructed_energy, component), abs=1.0e-12
+        )
 
 
 def test_failed_consistency_residual_returns_to_normal_scf_iterations():

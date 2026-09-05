@@ -19,8 +19,8 @@ class Hamiltonian:
 
     def __post_init__(self) -> None:
         """Validate and retain a real, finite grid potential."""
-        if self.grid.basis.npw != self.basis.npw:
-            raise ValueError("grid: basis plane-wave count does not match Hamiltonian basis")
+        if self.grid.basis is not self.basis:
+            raise ValueError("grid: expected the Hamiltonian basis by object identity")
 
         potential = np.asarray(self.local_potential)
         if np.iscomplexobj(potential):

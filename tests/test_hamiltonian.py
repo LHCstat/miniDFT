@@ -90,6 +90,19 @@ def test_hamiltonian_rejects_invalid_potentials_and_coefficient_shapes():
         hamiltonian.apply_many(np.zeros(hamiltonian.basis.npw))
 
 
+def test_hamiltonian_rejects_grid_from_a_distinct_same_size_basis():
+    """Catch reciprocal metadata mixing hidden by equal plane-wave counts."""
+    lattice = Lattice.from_row_vectors(np.eye(3) * 8.0)
+    basis = PlaneWaveBasis.from_cutoff(lattice, encut=1.0)
+    distinct_basis = PlaneWaveBasis.from_cutoff(lattice, encut=1.0)
+    grid = FFTGrid.from_basis(distinct_basis)
+    assert basis is not distinct_basis
+    assert basis.npw == distinct_basis.npw
+
+    with pytest.raises(ValueError, match="grid: expected the Hamiltonian basis"):
+        Hamiltonian(basis, grid, np.zeros(grid.shape))
+
+
 def test_hamiltonian_is_hermitian_for_a_real_local_potential():
     """Catch conjugation errors in the FFT-mediated local-potential action."""
     reference = make_hamiltonian()

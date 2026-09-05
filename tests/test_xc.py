@@ -43,6 +43,19 @@ def test_zero_density_has_exact_finite_lda_outputs():
     assert np.all(np.isfinite(result.energy_per_particle))
 
 
+def test_lda_rejects_batched_density_with_contextual_exact_shape_error():
+    """Catch leading density dimensions reaching LDA masks and grid integration."""
+    grid = make_grid()
+    density = np.zeros((2, *grid.shape))
+
+    with pytest.raises(ValueError) as error:
+        lda_pz81(density, grid)
+
+    assert str(error.value) == (
+        f"density: expected shape {grid.shape}, received {density.shape}"
+    )
+
+
 def test_positive_subnormal_density_has_finite_analytic_lda_limit():
     """Catch direct r_s division overflowing before the zero-density limit is reached."""
     grid = make_grid()
