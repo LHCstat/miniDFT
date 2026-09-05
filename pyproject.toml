@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mini-dft"
+version = "0.1.0"
+description = "An educational periodic plane-wave Kohn-Sham DFT implementation"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+    "scipy>=1.14",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+mini-dft = "mini_dft.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["mini_dft*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

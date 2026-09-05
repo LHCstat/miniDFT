@@ -1,0 +1,9 @@
+.worktrees/
+.superpowers/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+verification-output/
+output/
+.conda/
+.vscode/

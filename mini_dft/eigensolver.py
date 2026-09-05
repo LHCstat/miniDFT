@@ -1,28 +1,116 @@
+"""Lowest-state solvers for matrix-free plane-wave Hamiltonians."""
+
+from dataclasses import dataclass
+
 import numpy as np
-import basis
-import hamiltonian
 from scipy.sparse.linalg import LinearOperator, eigsh
-import system
-def get_eigenvalues(N,bands,k,potential):
-    #给出c的维度数量、占据带数量、k点、势能，返回本征值和本征向量
 
-    # 2. 封装为线性算子（告诉 eigsh 如何计算 H @ c）
-    A = LinearOperator(
-        shape=(N, N),
-        matvec=lambda x: hamiltonian.applyHc(potential, x, k),   # 输入 c，返回 H @ c
-        dtype=float               # 如果波函数是复数的；实数则用 float
+from .hamiltonian import Hamiltonian
+from .wavefunction import normalize_coefficients
+
+
+DENSE_FALLBACK_MAX_NPW = 256
+
+
+@dataclass(frozen=True)
+class EigenResult:
+    """Eigenpairs and their Euclidean residual norms."""
+
+    eigenvalues: np.ndarray
+    coefficients: np.ndarray
+    residual_norms: np.ndarray
+
+
+def solve_lowest(
+    hamiltonian: Hamiltonian,
+    n_bands: int,
+    tolerance: float,
+    max_iterations: int,
+) -> EigenResult:
+    """Solve for the requested number of lowest Hamiltonian eigenstates."""
+    npw = hamiltonian.basis.npw
+    if (
+        not isinstance(n_bands, (int, np.integer))
+        or isinstance(n_bands, bool)
+        or not 1 <= n_bands <= npw
+    ):
+        raise ValueError(f"n_bands: expected an integer in [1, {npw}]")
+    if not np.isfinite(tolerance) or tolerance <= 0.0:
+        raise ValueError("tolerance: expected a positive finite number")
+    if not isinstance(max_iterations, (int, np.integer)) or max_iterations < 1:
+        raise ValueError("max_iterations: expected a positive integer")
+
+    requires_dense_fallback = n_bands >= npw - 1
+    if requires_dense_fallback and npw > DENSE_FALLBACK_MAX_NPW:
+        raise ValueError(
+            f"n_bands: requested {n_bands} for a {npw}-plane-wave basis; "
+            f"requests above {npw - 2} require the dense fallback, which is "
+            f"limited to npw <= {DENSE_FALLBACK_MAX_NPW}"
+        )
+
+    if not requires_dense_fallback:
+        spectral_shift = np.finfo(float).eps
+        shifted_operator = LinearOperator(
+            shape=(npw, npw),
+            matvec=lambda vector: hamiltonian.apply(vector) + spectral_shift * vector,
+            dtype=np.complex128,
+        )
+        _, eigenvectors = eigsh(
+            shifted_operator,
+            k=n_bands,
+            which="SA",
+            tol=tolerance,
+            maxiter=max_iterations,
+        )
+    else:
+        identity = np.eye(npw, dtype=np.complex128)
+        dense_hamiltonian = hamiltonian.apply_many(identity).T
+        _, eigenvectors = np.linalg.eigh(dense_hamiltonian)
+        eigenvectors = eigenvectors[:, :n_bands]
+
+    eigenvalues, coefficients = _rayleigh_ritz_refinement(hamiltonian, eigenvectors)
+    residual_norms = np.linalg.norm(
+        hamiltonian.apply_many(coefficients) - eigenvalues[:, np.newaxis] * coefficients,
+        axis=1,
+    )
+    _validate_unshifted_residuals(residual_norms, tolerance, n_bands)
+    return EigenResult(
+        eigenvalues=np.asarray(eigenvalues, dtype=float),
+        coefficients=coefficients,
+        residual_norms=np.asarray(residual_norms, dtype=float),
     )
 
-    # 3. 调用求解 H c = E c
-    #    k: 你想求几个本征值（比如占据带数）
-    eigenvalues, eigenvectors = eigsh(
-        A,
-        k=bands,          # 特征值个数
-        which='SA',           # SA = 最小值（基态）
-        tol=1e-8,
-        maxiter=1000
-    )
 
-    # eigenvectors 的列是特征向量，转置一下方便后续用 (num_bands, N)
-    eigenvectors = eigenvectors.T
-    return eigenvalues, eigenvectors
+def _rayleigh_ritz_refinement(
+    hamiltonian: Hamiltonian, candidate_vectors: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Diagonalize the original Hamiltonian in a rank-checked candidate subspace."""
+    candidates = np.asarray(candidate_vectors, dtype=np.complex128)
+    singular_values = np.linalg.svd(candidates, compute_uv=False)
+    rank_threshold = (
+        np.finfo(float).eps * max(candidates.shape) * singular_values[0]
+    )
+    if singular_values[-1] <= rank_threshold:
+        raise RuntimeError("eigensolver: candidate subspace is rank deficient")
+
+    orthonormal_basis, _ = np.linalg.qr(candidates)
+    applied_basis = hamiltonian.apply_many(orthonormal_basis.T).T
+    projected = orthonormal_basis.conj().T @ applied_basis
+    projected = 0.5 * (projected + projected.conj().T)
+    eigenvalues, rotations = np.linalg.eigh(projected)
+    coefficients = normalize_coefficients((orthonormal_basis @ rotations).T)
+    return np.asarray(eigenvalues, dtype=float), coefficients
+
+
+def _validate_unshifted_residuals(
+    residual_norms: np.ndarray, tolerance: float, n_bands: int
+) -> None:
+    """Reject eigenpairs that do not meet an absolute residual-quality bound."""
+    residual_limit = max(tolerance, 100.0 * np.finfo(float).eps)
+    maximum_residual = float(np.max(residual_norms))
+    if not np.isfinite(maximum_residual) or maximum_residual > residual_limit:
+        raise RuntimeError(
+            "eigensolver: unshifted residual "
+            f"{maximum_residual:.3e} exceeds {residual_limit:.3e} "
+            f"for {n_bands} requested bands"
+        )

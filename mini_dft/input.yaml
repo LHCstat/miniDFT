@@ -1,0 +1,36 @@
+units:
+  length: angstrom
+  energy: ev
+
+lattice:
+  # YAML supplies lattice vectors as rows; Mini-DFT stores them as columns.
+  vectors:
+    - [5.0, 0.0, 0.0]
+    - [0.0, 5.0, 0.0]
+    - [0.0, 0.0, 5.0]
+
+electrons: 2
+encut: 20.0
+bands: 4
+
+potential:
+  # Educational periodic local model, not an elemental pseudopotential.
+  type: cosine
+  amplitudes: [-0.40, -0.40, -0.40]
+  modes:
+    - [1, 0, 0]
+    - [0, 1, 0]
+    - [0, 0, 1]
+  phases: [0.0, 0.0, 0.0]
+
+scf:
+  max_iterations: 80
+  density_tolerance: 2.0e-7
+  energy_tolerance: 2.0e-7
+  mixing_alpha: 0.35
+  eigensolver_tolerance: 1.0e-10
+
+dos:
+  enabled: true
+  points: 101
+  width: 0.10
